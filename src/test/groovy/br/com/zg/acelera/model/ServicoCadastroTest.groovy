@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
-import java.time.LocalDate
-
 import static org.junit.jupiter.api.Assertions.assertEquals
 import static org.junit.jupiter.api.Assertions.assertFalse
 import static org.junit.jupiter.api.Assertions.assertThrows
@@ -22,18 +20,17 @@ class ServicoCadastroTest {
                 { Map<String, Object> ignored -> }
         )
         ServicoCadastro servico = new ServicoCadastro(repositorio)
-        LocalDate birthDate = LocalDate.now().minusYears(25).minusDays(1)
-
         Map resultado = servico.cadastrarCandidato([
                 cpf           : '12345678900',
                 nome          : 'Batatiudo Exemplo',
                 email         : 'batatiudo@example.com',
                 pais          : 'Brasil',
                 estado        : 'SP',
-                cep           : '01000000',
-                descricao     : 'Perfil de candidato',
-                dataNascimento: birthDate.toString(),
-                senha         : 'nao persistida'
+                 cep           : '01000000',
+                 descricao     : 'Perfil de candidato',
+                 idade         : 25,
+                 competencias  : [' Java ', 'Groovy', 'Java'],
+                 senha         : 'nao persistida'
         ])
 
         assertEquals('candidato', resultado.tipo)
@@ -41,9 +38,10 @@ class ServicoCadastroTest {
         int idadeCalculada = captured.candidate.idade as int
         assertEquals(25, idadeCalculada)
         assertEquals(
-                ['cpf', 'nome', 'email', 'pais', 'estado', 'cep', 'descricao', 'idade'] as Set,
+                ['cpf', 'nome', 'email', 'pais', 'estado', 'cep', 'descricao', 'idade', 'competencias'] as Set,
                 captured.candidate.keySet()
         )
+        assertEquals(['Java', 'Groovy'], captured.candidate.competencias)
     }
 
     @Test
@@ -60,52 +58,33 @@ class ServicoCadastroTest {
                 nome    : 'Tapetes Exemplo',
                 email   : 'contato@example.com',
                 pais    : 'Brasil',
-                estado  : 'SP',
-                cep     : '01000000',
-                descricao: 'Fabricante de tapetes'
+                 estado  : 'SP',
+                 cep     : '01000000',
+                 descricao: 'Fabricante de tapetes',
+                 competencias: ['Producao', 'Logistica']
         ])
 
         assertEquals('empresa', resultado.tipo)
         assertEquals('12345678000199', resultado.identificador)
         assertEquals(
-                ['cnpj', 'nome', 'email', 'pais', 'estado', 'cep', 'descricao'] as Set,
+                ['cnpj', 'nome', 'email', 'pais', 'estado', 'cep', 'descricao', 'competencias'] as Set,
                 captured.company.keySet()
         )
+        assertEquals(['Producao', 'Logistica'], captured.company.competencias)
     }
 
     @Test
-    void deveRejeitarDataDeNascimentoFutura() {
+    void deveRejeitarIdadeForaDoIntervaloPermitido() {
         RepositorioCadastro repositorio = new RepositorioCapturador(
                 { Map<String, Object> ignored -> },
                 { Map<String, Object> ignored -> }
         )
         ServicoCadastro servico = new ServicoCadastro(repositorio)
 
-        CadastroInvalidoException excecao = assertThrows(
-                CadastroInvalidoException,
-                {
-                    servico.cadastrarCandidato([
-                            cpf: '12345678900',
-                            dataNascimento: LocalDate.now().plusDays(1).toString()
-                    ])
-                }
-        )
-
-        assertEquals('dataNascimento nao pode estar no futuro.', excecao.message)
-    }
-
-    @Test
-    void deveCalcularIdadeZeroParaQuemNasceuHoje() {
-        Map<String, Object> captured = [:]
-        ServicoCadastro servico = new ServicoCadastro(new RepositorioCapturador(
-                { Map<String, Object> candidato -> captured.candidate = candidato },
-                { Map<String, Object> ignored -> }
-        ))
-
-        servico.cadastrarCandidato(dadosCandidato(dataNascimento: LocalDate.now().toString()))
-
-        int idadeCalculada = captured.candidate.idade as int
-        assertEquals(0, idadeCalculada)
+        CadastroInvalidoException excecao = assertThrows(CadastroInvalidoException) {
+            servico.cadastrarCandidato(dadosCandidato(idade: 17))
+        }
+        assertEquals('idade deve estar entre 18 e 120 anos.', excecao.message)
     }
 
     @Test
@@ -139,7 +118,7 @@ class ServicoCadastroTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = ['cpf', 'nome', 'email', 'pais', 'estado', 'cep', 'descricao', 'dataNascimento'])
+    @ValueSource(strings = ['cpf', 'nome', 'email', 'pais', 'estado', 'cep', 'descricao', 'idade'])
     void deveRejeitarCampoObrigatorioAusenteOuVazio(String campo) {
         Map<String, Object> payload = dadosCandidato()
         payload.remove(campo)
@@ -163,19 +142,6 @@ class ServicoCadastroTest {
 
         assertThrows(CadastroInvalidoException) {
             servico.cadastrarCandidato(dadosCandidato(email: email))
-        }
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = ['2000/01/15', '15-01-2000', '2000-02-30', 'data-invalida'])
-    void deveRejeitarDataDeNascimentoForaDoFormatoOuInexistente(String dataNascimento) {
-        ServicoCadastro servico = new ServicoCadastro(new RepositorioCapturador(
-                { Map<String, Object> ignored -> },
-                { Map<String, Object> ignored -> }
-        ))
-
-        assertThrows(CadastroInvalidoException) {
-            servico.cadastrarCandidato(dadosCandidato(dataNascimento: dataNascimento))
         }
     }
 
@@ -248,6 +214,31 @@ class ServicoCadastroTest {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = ['17', '121', '-1'])
+    void deveRejeitarIdadeForaDosLimitesDoFormulario(String idade) {
+        ServicoCadastro servico = new ServicoCadastro(new RepositorioCapturador(
+                { Map<String, Object> ignored -> },
+                { Map<String, Object> ignored -> }
+        ))
+
+        assertThrows(CadastroInvalidoException) {
+            servico.cadastrarCandidato(dadosCandidato(idade: idade as Integer))
+        }
+    }
+
+    @Test
+    void deveRejeitarIdadeFracionaria() {
+        ServicoCadastro servico = new ServicoCadastro(new RepositorioCapturador(
+                { Map<String, Object> ignored -> },
+                { Map<String, Object> ignored -> }
+        ))
+
+        assertThrows(CadastroInvalidoException) {
+            servico.cadastrarCandidato(dadosCandidato(idade: 25.5))
+        }
+    }
+
     @Test
     void devePropagarFalhaDoRepositorioSemRetornarSucesso() {
         ServicoCadastro servico = new ServicoCadastro(new RepositorioCapturador(
@@ -271,7 +262,7 @@ class ServicoCadastroTest {
                 estado        : 'SP',
                 cep           : '01000000',
                 descricao     : 'Perfil de candidato',
-                dataNascimento: '2000-01-15'
+                idade         : 25
         ] + substituicoes
     }
 

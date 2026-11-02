@@ -8,8 +8,13 @@ Os comandos SQL foram alinhados aos DAOs/models compartilhados da aplicacao prin
 
 - `candidato`: `cpf`, `nome`, `email`, `pais`, `estado`, `cep`, `descricao`, `idade`.
 - `empresa`: `cnpj`, `nome`, `email`, `pais`, `estado`, `cep`, `descricao`.
+- `competencia`: `id_competencia`, `nome`.
+- `candidato_competencia`: `cpf_candidato`, `id_competencia`.
+- `empresa_competencia`: `cnpj_empresa`, `id_competencia`.
 
-O cadastro de candidato recebe `dataNascimento` no formato `AAAA-MM-DD` e calcula `idade`, o campo persistido pelo DAO existente. `nome` recebe o nome completo, pois a tabela tem apenas essa coluna.
+O cadastro de candidato recebe e persiste `idade`, como no formulario, no model e na tabela existentes. `nome` recebe o nome completo, pois a tabela tem apenas essa coluna.
+
+As competencias recebidas como lista de nomes sao inseridas em `competencia` ou reutilizadas quando o nome ja existe. O microservico entao cria os vinculos na tabela correspondente ao perfil. O cadastro do perfil, as competencias novas e os vinculos sao gravados em uma unica transacao.
 
 **Senha:** as tabelas, DAOs e models consultados nao apresentam coluna de senha. Por isso, o microservico nao persiste nem promete autenticar senhas; enviar `senha` no JSON nao a armazena. Nenhuma alteracao de banco e realizada.
 
@@ -29,15 +34,16 @@ O cadastro de candidato recebe `dataNascimento` no formato `AAAA-MM-DD` e calcul
 
 ## Configuracao e execucao
 
-O JDBC URL padrao e `jdbc:postgresql://localhost:5432/LinkeTinder_BD`, correspondente a conexao explorada no projeto. Configure `DB_USER` e `DB_PASSWORD` no ambiente; `DB_URL` e opcional para sobrescrever a URL. `PORT` e opcional (padrao `8081`) e `FRONTEND_ORIGIN` e opcional (padrao `http://localhost:5173`).
+O JDBC URL padrao e `jdbc:postgresql://localhost:5432/LinkeTinder_BD`, correspondente a conexao explorada no projeto. Configure `DB_USER` e `DB_PASSWORD` no ambiente; `DB_URL` e opcional para sobrescrever a URL. `PORT` e opcional (padrao `8081`). `FRONTEND_ORIGIN` define a origem exata do frontend (esquema, host e porta); como a origem informada para o frontend local e `http://localhost:5173`, esse e o valor padrao. Sobrescreva a variavel se a view rodar em outro endereco.
 
 ```bash
 export DB_USER='seu_usuario'
 export DB_PASSWORD='sua_senha'
+# Opcional: FRONTEND_ORIGIN='http://localhost:5173'
 ./gradlew run
 ```
 
-O banco e o usuario precisam existir previamente e ter permissao de insercao nas tabelas. As credenciais sao lidas do ambiente; nao as coloque no codigo nem no controle de versao.
+O banco e o usuario precisam existir previamente. O usuario precisa inserir nas tabelas de perfil e de vinculo e ter permissao de insercao, consulta e atualizacao em `competencia` (o `ON CONFLICT` reutiliza competencias existentes). As credenciais sao lidas do ambiente; nao as coloque no codigo nem no controle de versao.
 
 ## Endpoints
 
@@ -47,12 +53,13 @@ O banco e o usuario precisam existir previamente e ter permissao de insercao nas
 {
   "cpf": "12345678900",
   "nome": "Batatiudo Exemplo",
-  "dataNascimento": "2000-01-15",
+  "idade": 29,
   "email": "batatiudo@example.com",
   "pais": "Brasil",
   "estado": "SP",
   "cep": "01000000",
-  "descricao": "Perfil de candidato"
+  "descricao": "Perfil de candidato",
+  "competencias": ["Java", "Groovy"]
 }
 ```
 
@@ -66,15 +73,16 @@ O banco e o usuario precisam existir previamente e ter permissao de insercao nas
   "pais": "Brasil",
   "estado": "SP",
   "cep": "01000000",
-  "descricao": "Fabricante de tapetes"
+  "descricao": "Fabricante de tapetes",
+  "competencias": ["Producao", "Logistica"]
 }
 ```
 
-Ambos exigem `Content-Type: application/json`. Sucesso retorna `201 Created` com `tipo` e `identificador`. JSON invalido retorna `400`, validacao `422`, conflito de unicidade PostgreSQL `409`, metodo invalido `405`, endpoint inexistente `404` e falhas internas `500`.
+Ambos exigem `Content-Type: application/json`. Sucesso retorna `201 Created` com `tipo` e `identificador`. Erros retornam JSON no formato `{"mensagem":"..."}`. JSON invalido retorna `400`, validacao `422`, conflito de unicidade PostgreSQL `409`, metodo invalido `405`, endpoint inexistente `404` e falhas internas `500`.
 
 ## Exploracao da integracao com frontend
 
-O fluxo explorado e um `fetch` do formulario para o endpoint HTTP, enviando JSON. O servidor habilita CORS somente para a origem configurada em `FRONTEND_ORIGIN`; `OPTIONS` permite a verificacao previa do navegador. Ajuste essa origem para o endereco real da view:
+O fluxo explorado e um `fetch` do formulario para o endpoint HTTP, enviando JSON. O servidor habilita CORS somente para a origem configurada em `FRONTEND_ORIGIN` (padrao `http://localhost:5173`); `OPTIONS` permite a verificacao previa do navegador. Sobrescreva a configuracao se a origem da view mudar:
 
 ```javascript
 const resposta = await fetch('http://localhost:8081/api/candidatos', {
@@ -84,11 +92,11 @@ const resposta = await fetch('http://localhost:8081/api/candidatos', {
 });
 
 if (!resposta.ok) {
-  throw new Error((await resposta.json()).erro);
+  throw new Error((await resposta.json()).mensagem);
 }
 ```
 
-Para empresas, use `/api/empresas` e envie `cnpj` no lugar de `cpf`/`dataNascimento`. Este repositorio nao contem o frontend da aplicacao principal; o exemplo documenta o ponto de integracao a ser conectado pela view, sem alteracao no frontend.
+Para empresas, use `/api/empresas` e envie `cnpj` no lugar de `cpf`/`idade`. Envie `competencias` como lista de nomes para ambos os endpoints. O projeto principal do frontend nao esta neste repositorio; a origem configurada em `FRONTEND_ORIGIN` deve ser a origem real servida pelo frontend.
 
 ## Testes
 

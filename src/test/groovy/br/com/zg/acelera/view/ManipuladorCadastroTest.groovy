@@ -64,7 +64,8 @@ class ManipuladorCadastroTest {
                 estado: 'SP',
                 cep: '01000000',
                 descricao: 'Cadastro via HTTP',
-                dataNascimento: '2000-01-15'
+                idade: 25,
+                competencias: ['Java', 'Groovy']
         ])
 
         assertEquals(201, resposta.statusCode())
@@ -72,6 +73,7 @@ class ManipuladorCadastroTest {
         assertEquals('candidato', interpretarJson(resposta).tipo)
         assertEquals('12345678900', interpretarJson(resposta).identificador)
         assertEquals('12345678900', repositorio.candidato.cpf)
+        assertEquals(['Java', 'Groovy'], repositorio.candidato.competencias)
     }
 
     @Test
@@ -83,12 +85,14 @@ class ManipuladorCadastroTest {
                 pais: 'Brasil',
                 estado: 'RJ',
                 cep: '20000000',
-                descricao: 'Cadastro via HTTP'
+                descricao: 'Cadastro via HTTP',
+                competencias: ['Logistica']
         ])
 
         assertEquals(201, resposta.statusCode())
         assertEquals('empresa', interpretarJson(resposta).tipo)
         assertEquals('12345678000199', repositorio.empresa.cnpj)
+        assertEquals(['Logistica'], repositorio.empresa.competencias)
     }
 
     @Test
@@ -96,7 +100,7 @@ class ManipuladorCadastroTest {
         HttpResponse<String> resposta = enviarTexto('POST', '/api/candidatos', '{json invalido', 'application/json')
 
         assertEquals(400, resposta.statusCode())
-        assertEquals('JSON invalido.', interpretarJson(resposta).erro)
+        assertEquals('JSON invalido.', interpretarJson(resposta).mensagem)
         assertNull(repositorio.candidato)
     }
 
@@ -105,7 +109,7 @@ class ManipuladorCadastroTest {
         HttpResponse<String> resposta = enviarTexto('POST', '/api/candidatos', '["valor"]', 'application/json')
 
         assertEquals(400, resposta.statusCode())
-        assertEquals('O JSON deve ser um objeto.', interpretarJson(resposta).erro)
+        assertEquals('O JSON deve ser um objeto.', interpretarJson(resposta).mensagem)
     }
 
     @Test
@@ -113,7 +117,7 @@ class ManipuladorCadastroTest {
         HttpResponse<String> resposta = enviarTexto('POST', '/api/candidatos', '{}', 'text/plain')
 
         assertEquals(415, resposta.statusCode())
-        String erro = interpretarJson(resposta).erro as String
+        String erro = interpretarJson(resposta).mensagem as String
         assertTrue(erro.contains('application/json'))
     }
 
@@ -122,7 +126,7 @@ class ManipuladorCadastroTest {
         HttpResponse<String> resposta = enviarJson('POST', '/api/empresas', [cnpj: ''])
 
         assertEquals(422, resposta.statusCode())
-        String erro = interpretarJson(resposta).erro as String
+        String erro = interpretarJson(resposta).mensagem as String
         assertTrue(erro.contains('cnpj'))
         assertNull(repositorio.empresa)
     }
@@ -132,7 +136,7 @@ class ManipuladorCadastroTest {
         HttpResponse<String> resposta = enviarJson('POST', '/api/outro', [:])
 
         assertEquals(404, resposta.statusCode())
-        assertEquals('Endpoint nao encontrado.', interpretarJson(resposta).erro)
+        assertEquals('Endpoint nao encontrado.', interpretarJson(resposta).mensagem)
     }
 
     @Test
@@ -154,7 +158,7 @@ class ManipuladorCadastroTest {
         )
 
         assertEquals(413, resposta.statusCode())
-        String erro = interpretarJson(resposta).erro as String
+        String erro = interpretarJson(resposta).mensagem as String
         assertTrue(erro.contains('1 MiB'))
     }
 
@@ -208,7 +212,7 @@ class ManipuladorCadastroTest {
         ])
 
         assertEquals(409, resposta.statusCode())
-        String erro = interpretarJson(resposta).erro as String
+        String erro = interpretarJson(resposta).mensagem as String
         assertTrue(erro.contains('Ja existe'))
     }
 
@@ -224,11 +228,11 @@ class ManipuladorCadastroTest {
                 estado: 'SP',
                 cep: '01000000',
                 descricao: 'Teste de falha',
-                dataNascimento: '2000-01-15'
+                idade: 25
         ])
 
         assertEquals(500, resposta.statusCode())
-        assertEquals('Falha ao persistir o cadastro.', interpretarJson(resposta).erro)
+        assertEquals('Falha ao persistir o cadastro.', interpretarJson(resposta).mensagem)
     }
 
     @Test
@@ -246,7 +250,7 @@ class ManipuladorCadastroTest {
         ])
 
         assertEquals(500, resposta.statusCode())
-        assertEquals('Falha interna ao processar o cadastro.', interpretarJson(resposta).erro)
+        assertEquals('Falha interna ao processar o cadastro.', interpretarJson(resposta).mensagem)
     }
 
     private HttpResponse<String> enviarJson(String metodo, String caminho, Map payload) {

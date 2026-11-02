@@ -35,24 +35,24 @@ class ManipuladorHttpCadastro implements HttpHandler {
             }
             if (exchange.requestMethod != 'POST') {
                 exchange.responseHeaders.set('Allow', 'POST, OPTIONS')
-                responder(exchange, 405, [erro: 'Metodo nao permitido.'])
+                responder(exchange, 405, [mensagem: 'Metodo nao permitido.'])
                 return
             }
             if (!exchange.requestHeaders.getFirst('Content-Type')?.toLowerCase()
                     ?.startsWith('application/json')) {
-                responder(exchange, 415, [erro: 'Content-Type deve ser application/json.'])
+                responder(exchange, 415, [mensagem: 'Content-Type deve ser application/json.'])
                 return
             }
 
             byte[] corpo = exchange.requestBody.readNBytes(LIMITE_CORPO_BYTES + 1)
             if (corpo.length > LIMITE_CORPO_BYTES) {
-                responder(exchange, 413, [erro: 'Corpo da requisicao excede o limite de 1 MiB.'])
+                responder(exchange, 413, [mensagem: 'Corpo da requisicao excede o limite de 1 MiB.'])
                 return
             }
 
             Object dadosInterpretados = new JsonSlurper().parse(corpo)
             if (!(dadosInterpretados instanceof Map)) {
-                responder(exchange, 400, [erro: 'O JSON deve ser um objeto.'])
+                responder(exchange, 400, [mensagem: 'O JSON deve ser um objeto.'])
                 return
             }
             Map<String, Object> dados = (Map<String, Object>) dadosInterpretados
@@ -66,24 +66,24 @@ class ManipuladorHttpCadastro implements HttpHandler {
                     resultado = controlador.cadastrarEmpresa(dados)
                     break
                 default:
-                    responder(exchange, 404, [erro: 'Endpoint nao encontrado.'])
+                    responder(exchange, 404, [mensagem: 'Endpoint nao encontrado.'])
                     return
             }
             responder(exchange, 201, resultado)
         } catch (CadastroInvalidoException exception) {
-            responder(exchange, 422, [erro: exception.message])
+            responder(exchange, 422, [mensagem: exception.message])
         } catch (JsonException ignored) {
-            responder(exchange, 400, [erro: 'JSON invalido.'])
+            responder(exchange, 400, [mensagem: 'JSON invalido.'])
         } catch (SQLException exception) {
             if (exception.SQLState == '23505') {
-                responder(exchange, 409, [erro: 'Ja existe um cadastro com esse identificador ou email.'])
+                responder(exchange, 409, [mensagem: 'Ja existe um cadastro com esse identificador ou email.'])
             } else {
                 REGISTRADOR.log(Level.SEVERE, 'Falha ao persistir cadastro no PostgreSQL.', exception)
-                responder(exchange, 500, [erro: 'Falha ao persistir o cadastro.'])
+                responder(exchange, 500, [mensagem: 'Falha ao persistir o cadastro.'])
             }
         } catch (Exception exception) {
             REGISTRADOR.log(Level.SEVERE, 'Falha inesperada ao processar cadastro.', exception)
-            responder(exchange, 500, [erro: 'Falha interna ao processar o cadastro.'])
+            responder(exchange, 500, [mensagem: 'Falha interna ao processar o cadastro.'])
         } finally {
             exchange.close()
         }

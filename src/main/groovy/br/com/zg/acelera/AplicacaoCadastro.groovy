@@ -10,8 +10,8 @@ import com.sun.net.httpserver.HttpServer
 import java.util.concurrent.Executors
 import java.util.logging.Logger
 
-class Main {
-    private static final Logger REGISTRADOR = Logger.getLogger(Main.name)
+class AplicacaoCadastro {
+    private static final Logger REGISTRADOR = Logger.getLogger(AplicacaoCadastro.name)
 
     static void main(String[] args) {
         String urlBanco = System.getenv().getOrDefault(

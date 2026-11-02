@@ -1,6 +1,8 @@
 package br.com.zg.acelera.model
 
 import java.sql.DriverManager
+import java.sql.Connection
+import java.sql.SQLException
 
 class RepositorioPostgresCadastro implements RepositorioCadastro {
     private final String urlBanco
@@ -19,7 +21,7 @@ class RepositorioPostgresCadastro implements RepositorioCadastro {
             INSERT INTO candidato (cpf, nome, email, pais, estado, cep, descricao, idade)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         '''
-        comConexao { conexao ->
+        emTransacao { conexao ->
             conexao.prepareStatement(sql).withCloseable { instrucao ->
                 instrucao.setString(1, candidato.cpf as String)
                 instrucao.setString(2, candidato.nome as String)
@@ -31,6 +33,8 @@ class RepositorioPostgresCadastro implements RepositorioCadastro {
                 instrucao.setInt(8, candidato.idade as int)
                 instrucao.executeUpdate()
             }
+            inserirVinculosCompetencias(conexao, (candidato.competencias ?: []) as Collection<String>,
+                    'candidato_competencia', 'cpf_candidato', candidato.cpf as String)
         }
     }
 
@@ -40,7 +44,7 @@ class RepositorioPostgresCadastro implements RepositorioCadastro {
             INSERT INTO empresa (cnpj, nome, email, pais, estado, cep, descricao)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         '''
-        comConexao { conexao ->
+        emTransacao { conexao ->
             conexao.prepareStatement(sql).withCloseable { instrucao ->
                 instrucao.setString(1, empresa.cnpj as String)
                 instrucao.setString(2, empresa.nome as String)
@@ -51,12 +55,60 @@ class RepositorioPostgresCadastro implements RepositorioCadastro {
                 instrucao.setString(7, empresa.descricao as String)
                 instrucao.executeUpdate()
             }
+            inserirVinculosCompetencias(conexao, (empresa.competencias ?: []) as Collection<String>,
+                    'empresa_competencia', 'cnpj_empresa', empresa.cnpj as String)
         }
     }
 
-    private <T> T comConexao(Closure<T> operacao) {
+    private static void inserirVinculosCompetencias(
+            Connection conexao,
+            Collection<String> competencias,
+            String tabelaVinculo,
+            String colunaIdentificador,
+            String identificador
+    ) {
+        String sqlCompetencia = '''
+            INSERT INTO competencia (nome) VALUES (?)
+            ON CONFLICT (nome) DO UPDATE SET nome = EXCLUDED.nome
+            RETURNING id_competencia
+        '''
+        String sqlVinculo = "INSERT INTO ${tabelaVinculo} (${colunaIdentificador}, id_competencia) VALUES (?, ?)"
+
+        competencias.each { String competencia ->
+            long idCompetencia = conexao.prepareStatement(sqlCompetencia).withCloseable { instrucao ->
+                instrucao.setString(1, competencia)
+                instrucao.executeQuery().withCloseable { resultado ->
+                    if (!resultado.next()) {
+                        throw new SQLException('Nao foi possivel obter o id da competencia.')
+                    }
+                    resultado.getLong('id_competencia')
+                }
+            }
+
+            conexao.prepareStatement(sqlVinculo).withCloseable { instrucao ->
+                instrucao.setString(1, identificador)
+                instrucao.setLong(2, idCompetencia)
+                instrucao.executeUpdate()
+            }
+        }
+    }
+
+    private <T> T emTransacao(Closure<T> operacao) {
         DriverManager.getConnection(urlBanco, usuarioBanco, senhaBanco).withCloseable {
-            conexao -> operacao.call(conexao)
+            Connection conexao ->
+                conexao.autoCommit = false
+                try {
+                    T resultado = operacao.call(conexao)
+                    conexao.commit()
+                    resultado
+                } catch (Exception exception) {
+                    try {
+                        conexao.rollback()
+                    } catch (SQLException falhaRollback) {
+                        exception.addSuppressed(falhaRollback)
+                    }
+                    throw exception
+                }
         }
     }
 }

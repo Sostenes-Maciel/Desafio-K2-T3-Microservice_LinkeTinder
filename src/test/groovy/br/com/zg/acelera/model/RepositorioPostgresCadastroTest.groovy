@@ -12,6 +12,7 @@ import java.sql.Driver
 import java.sql.DriverPropertyInfo
 import java.sql.DriverManager
 import java.sql.PreparedStatement
+import java.sql.ResultSet
 import java.sql.SQLException
 import java.util.logging.Logger
 
@@ -46,10 +47,11 @@ class RepositorioPostgresCadastroTest {
                 estado: 'SP',
                 cep: '01000000',
                 descricao: 'Descricao',
-                idade: 26
+                idade: 26,
+                competencias: ['Java']
         ])
 
-        assertTrue(driver.sql.contains(
+        assertTrue(driver.comandos[0].contains(
                 'INSERT INTO candidato (cpf, nome, email, pais, estado, cep, descricao, idade)'
         ))
         assertEquals(
@@ -63,8 +65,13 @@ class RepositorioPostgresCadastroTest {
                         7: 'Descricao',
                         8: 26
                 ],
-                driver.parametros
+                driver.parametros[0]
         )
+        assertTrue(driver.comandos[1].contains('INSERT INTO competencia (nome)'))
+        assertEquals([1: 'Java'], driver.parametros[1])
+        assertTrue(driver.comandos[2].contains('INSERT INTO candidato_competencia (cpf_candidato, id_competencia)'))
+        assertEquals([1: '12345678900', 2: 42L], driver.parametros[2])
+        assertTrue(driver.transacaoConfirmada)
         assertTrue(driver.statementFechado)
         assertTrue(driver.conexaoFechada)
     }
@@ -78,10 +85,11 @@ class RepositorioPostgresCadastroTest {
                 pais: 'Brasil',
                 estado: 'RJ',
                 cep: '20000000',
-                descricao: 'Descricao'
+                descricao: 'Descricao',
+                competencias: ['Logistica']
         ])
 
-        assertTrue(driver.sql.contains(
+        assertTrue(driver.comandos[0].contains(
                 'INSERT INTO empresa (cnpj, nome, email, pais, estado, cep, descricao)'
         ))
         assertEquals(
@@ -94,55 +102,50 @@ class RepositorioPostgresCadastroTest {
                         6: '20000000',
                         7: 'Descricao'
                 ],
-                driver.parametros
+                driver.parametros[0]
         )
+        assertTrue(driver.comandos[2].contains('INSERT INTO empresa_competencia (cnpj_empresa, id_competencia)'))
+        assertEquals([1: '12345678000199', 2: 42L], driver.parametros[2])
+        assertTrue(driver.transacaoConfirmada)
         assertTrue(driver.statementFechado)
         assertTrue(driver.conexaoFechada)
     }
 
     private static class DriverDeTeste implements Driver {
-        String sql
-        Map<Integer, Object> parametros = [:]
+        List<String> comandos = []
+        List<Map<Integer, Object>> parametros = []
         boolean statementFechado
         boolean conexaoFechada
+        boolean transacaoConfirmada
+        boolean transacaoRevertida
+        boolean autoCommit = true
 
         @Override
         Connection connect(String url, Properties info) throws SQLException {
             if (!acceptsURL(url)) {
                 return null
             }
-            PreparedStatement statement = Proxy.newProxyInstance(
-                    getClass().classLoader,
-                    [PreparedStatement] as Class[],
-                    { proxy, method, args ->
-                        if (method.name in ['setString', 'setInt']) {
-                            parametros[args[0] as Integer] = args[1]
-                            return null
-                        }
-                        switch (method.name) {
-                            case 'executeUpdate':
-                                return 1
-                            case 'close':
-                                statementFechado = true
-                                return null
-                            case 'isClosed':
-                                return statementFechado
-                            case 'toString':
-                                return 'PreparedStatement de teste'
-                            default:
-                                return valorPadrao(method.returnType)
-                        }
-                    } as InvocationHandler
-            ) as PreparedStatement
-
-            Proxy.newProxyInstance(
+            Connection conexao = Proxy.newProxyInstance(
                     getClass().classLoader,
                     [Connection] as Class[],
                     { proxy, method, args ->
                         switch (method.name) {
                             case 'prepareStatement':
-                                sql = args[0] as String
-                                return statement
+                                comandos.add(args[0] as String)
+                                parametros.add([:])
+                                int indice = comandos.size() - 1
+                                return criarInstrucao(indice)
+                            case 'setAutoCommit':
+                                autoCommit = args[0] as boolean
+                                return null
+                            case 'getAutoCommit':
+                                return autoCommit
+                            case 'commit':
+                                transacaoConfirmada = true
+                                return null
+                            case 'rollback':
+                                transacaoRevertida = true
+                                return null
                             case 'close':
                                 conexaoFechada = true
                                 return null
@@ -155,6 +158,55 @@ class RepositorioPostgresCadastroTest {
                         }
                     } as InvocationHandler
             ) as Connection
+            conexao
+        }
+
+        private PreparedStatement criarInstrucao(int indice) {
+            Proxy.newProxyInstance(
+                    getClass().classLoader,
+                    [PreparedStatement] as Class[],
+                    { proxy, method, args ->
+                        if (method.name in ['setString', 'setInt']) {
+                            parametros[indice][args[0] as Integer] = args[1]
+                            return null
+                        }
+                        switch (method.name) {
+                            case 'executeUpdate':
+                                return 1
+                            case 'setLong':
+                                parametros[indice][args[0] as Integer] = args[1]
+                                return null
+                            case 'executeQuery':
+                                return Proxy.newProxyInstance(
+                                        getClass().classLoader,
+                                        [ResultSet] as Class[],
+                                        { resultadoProxy, resultadoMetodo, resultadoArgs ->
+                                            switch (resultadoMetodo.name) {
+                                                case 'next':
+                                                    return true
+                                                case 'getLong':
+                                                    return 42L
+                                                case 'close':
+                                                    return null
+                                                case 'toString':
+                                                    return 'ResultSet de teste'
+                                                default:
+                                                    return valorPadrao(resultadoMetodo.returnType)
+                                            }
+                                        } as InvocationHandler
+                                ) as ResultSet
+                            case 'close':
+                                statementFechado = true
+                                return null
+                            case 'isClosed':
+                                return statementFechado
+                            case 'toString':
+                                return 'PreparedStatement de teste'
+                            default:
+                                return valorPadrao(method.returnType)
+                        }
+                    } as InvocationHandler
+            ) as PreparedStatement
         }
 
         @Override
